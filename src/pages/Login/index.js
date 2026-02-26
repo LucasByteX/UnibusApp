@@ -2,8 +2,12 @@ import react from "react";
 import React, { useState,useEffect } from 'react';
 import {View,Text,StyleSheet,Button,FlatList,TouchableOpacity,TextInput} from 'react-native';
 import { Checkbox } from 'expo-checkbox';
+import Cadastro from "../Cadastro";
+import {useNavigation} from '@react-navigation/native'
 
 export default function Login () {
+
+    const  navigation = useNavigation();
 
 
     const [email,setEmail]= useState();
@@ -15,7 +19,7 @@ export default function Login () {
 
     function entrar (){
         if(email== "Lucas" && password==123)
-            alert('Logado')
+        ()=> <Cadastro/>
 
         else
             alert('Usuario Invalido')
@@ -62,6 +66,16 @@ export default function Login () {
                 >
 
                     <Text>Entrar</Text>
+
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.buttonArea}>
+                <TouchableOpacity
+                onPress={() => navigation.navigate('Cadastro')}
+                >
+
+                    <Text>Cadastrar</Text>
 
                 </TouchableOpacity>
             </View>
