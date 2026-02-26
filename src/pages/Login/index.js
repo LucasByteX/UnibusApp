@@ -19,7 +19,7 @@ export default function Login () {
 
     function entrar (){
         if(email== "Lucas" && password==123)
-        ()=> <Cadastro/>
+        alert('Logado')
 
         else
             alert('Usuario Invalido')
