@@ -18,8 +18,14 @@ export default function Login () {
 
 
     function entrar (){
-        if(email== "Lucas" && password==123)
-        alert('Logado')
+        if(email== "Membro" && password==123)
+            navigation.navigate('MenuMembro')
+
+        else if(email== "Comissao" && password==123)
+            navigation.navigate('MenuComissao')
+
+        else if(email== "Motorista" && password==123)
+            navigation.navigate('MenuMotorista')
 
         else
             alert('Usuario Invalido')

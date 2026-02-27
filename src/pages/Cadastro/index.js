@@ -74,8 +74,9 @@ export default function Cadastro () {
                     onValueChange={setComissao}
                 />
 
+                <TouchableOpacity onPress={() => setComissao(!comissao)}>    
                 <Text style={{marginLeft:10}}>Membro da Comissão</Text>
-
+                </TouchableOpacity>
             </View>
                     
 

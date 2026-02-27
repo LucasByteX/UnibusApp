@@ -4,7 +4,9 @@ import { NavigationContainer} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Login from './src/pages/Login';
 import Cadastro from './src/pages/Cadastro';
-
+import MenuMembro from './src/pages/MenuMembro';
+import MenuComissao from './src/pages/MenuComissao';
+import MenuMotorista from './src/pages/MenuMotorista';
 
 const Stack = createNativeStackNavigator();
 
@@ -13,10 +15,17 @@ export default function App() {
 
   return(
   <NavigationContainer>
-    <Stack.Navigator>
+    <Stack.Navigator
+    screenOptions={{
+    headerShown: true,
+  }}>
 
       <Stack.Screen name= "Login" component={Login} />
       <Stack.Screen name= "Cadastro" component={Cadastro} />
+      <Stack.Screen name= "MenuMembro" component={MenuMembro} />
+      <Stack.Screen name= "MenuComissao" component={MenuComissao} />
+      <Stack.Screen name= "MenuMotorista" component={MenuMotorista} />
+      
 
     </Stack.Navigator>
   </NavigationContainer>
