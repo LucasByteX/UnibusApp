@@ -19,13 +19,14 @@ export default function Login () {
 
     function entrar (){
         if(email== "Membro" && password==123)
-            navigation.navigate('MenuMembro')
+            navigation.navigate('Menu', {cargo : 'Membro'})
 
         else if(email== "Comissao" && password==123)
-            navigation.navigate('MenuComissao')
+            navigation.navigate('Menu', {cargo : 'Comissao'})
 
         else if(email== "Motorista" && password==123)
-            navigation.navigate('MenuMotorista')
+            navigation.navigate('Menu', {cargo : 'Motorista'})
+
 
         else
             alert('Usuario Invalido')

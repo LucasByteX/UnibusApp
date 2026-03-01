@@ -5,13 +5,18 @@ import {useNavigation} from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 
-export default function Viagem() {
+export default function Rotas({cargo}) {
 
     
 
     return(
     <View style={styles.container}>
-        <Text>Aqui vão ser exibidas as viagens</Text>
+        {!(cargo === "Comissao" || cargo==="Motorista") ? null : (
+          <>
+          <Text>Adicionar Rota</Text>
+          </>
+        )}
+        <Text>Rotas Disponiveis</Text>
     </View>
     );
 

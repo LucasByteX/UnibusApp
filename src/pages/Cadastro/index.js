@@ -3,7 +3,7 @@ import React, { useState,useEffect } from 'react';
 import {View,Text,Switch,StyleSheet,Button,FlatList,TouchableOpacity,TextInput} from 'react-native';
 import { Checkbox } from 'expo-checkbox';
 import {Picker} from '@react-native-picker/picker';
-
+import * as DocumentPicker from 'expo-document-picker';
 
 export default function Cadastro () {
 
@@ -11,6 +11,25 @@ export default function Cadastro () {
     const [instituicao,setInstituicao] = useState(0);
     const [motoristaswitch,setMotoristaSwitch] = useState(0);
     const [comissao,setComissao] = useState('0');
+    const [pickDoc,setPickdDoc] = useState(null);
+
+    const pickDocument = async () => {
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*', // aceita qualquer tipo de arquivo
+      copyToCacheDirectory: true,
+    });
+
+    console.log(result);
+
+    if (result.canceled === false) {
+      setPickdDoc(result.assets[0].name);
+    }
+
+  } catch (error) {
+    console.log('Erro ao selecionar arquivo: ', error);
+  }
+    };
     
 
     return(
@@ -46,11 +65,10 @@ export default function Cadastro () {
             style={styles.picker}
             onValueChange={(itemValue,itemIndex) => setInstituicao(itemValue)}
             >
-                <Picker.Item key = {0} value= {0}  label="INSTITUICAO"/>
+                <Picker.Item key = {0} value= {0}  label="-----INSTITUIÇÃO-----"/>
                 <Picker.Item key = {1} value= {1}  label="UEPB"/>
                 <Picker.Item key = {2} value= {2}  label="UFCG"/>
                 <Picker.Item key = {3} value= {3}  label="IFPB-CG"/>
-                <Picker.Item key = {3} value= {3}  label="IFPB-ESPERANÇA"/>
                 <Picker.Item key = {4} value= {4}  label="UNINASSAU"/>
                 <Picker.Item key = {4} value= {4}  label="UNIFIP"/>
             </Picker>
@@ -77,7 +95,19 @@ export default function Cadastro () {
                 <TouchableOpacity onPress={() => setComissao(!comissao)}>    
                 <Text style={{marginLeft:10}}>Membro da Comissão</Text>
                 </TouchableOpacity>
+
+        
+               
+
+
             </View>
+
+            <Button title="Selecionar Arquivo" onPress={pickDocument} />
+            {pickDoc === null ? null : (
+                <>
+                <Text>Arquivo Selecionado : {pickDoc}</Text>
+                </>
+            )}
                     
 
 

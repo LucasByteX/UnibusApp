@@ -7,6 +7,7 @@ import Cadastro from './src/pages/Cadastro';
 import MenuMembro from './src/pages/MenuMembro';
 import MenuComissao from './src/pages/MenuComissao';
 import MenuMotorista from './src/pages/MenuMotorista';
+import Menu from './src/pages/Menu';
 
 const Stack = createNativeStackNavigator();
 
@@ -17,12 +18,12 @@ export default function App() {
   <NavigationContainer>
     <Stack.Navigator
     screenOptions={{
-    headerShown: true,
+    headerShown: false,
   }}>
 
       <Stack.Screen name= "Login" component={Login} />
       <Stack.Screen name= "Cadastro" component={Cadastro} />
-      <Stack.Screen name= "MenuMembro" component={MenuMembro} />
+      <Stack.Screen name= "Menu" component={Menu} />
       <Stack.Screen name= "MenuComissao" component={MenuComissao} />
       <Stack.Screen name= "MenuMotorista" component={MenuMotorista} />
       
