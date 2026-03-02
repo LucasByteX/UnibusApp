@@ -26,7 +26,7 @@ export default function Menu({route, navigation}) {
             }}}> 
                 {() => <Rotas cargo= {cargo} />}
             </Tab.Screen>
-            {!(cargo == "Comissao" || cargo == "Motorista") ? null : (
+            {(cargo == "Membro") ? null : (
             <>
                 <Tab.Screen name="Usuarios" component={Usuarios} options ={{tabBarIcon: ({color,size}) => {
                     return <Feather name="users" size={size} color={color} />

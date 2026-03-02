@@ -4,15 +4,17 @@ import {View,Text,Switch,StyleSheet,Button,FlatList,TouchableOpacity,TextInput} 
 import { Checkbox } from 'expo-checkbox';
 import {Picker} from '@react-native-picker/picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "../../firebaseConnection";
 
 export default function Cadastro () {
 
 
     const [instituicao,setInstituicao] = useState(0);
     const [motoristaswitch,setMotoristaSwitch] = useState(0);
-    const [comissao,setComissao] = useState('0');
+    const [comissao,setComissao] = useState(0);
     const [pickDoc,setPickdDoc] = useState(null);
-
+    const [cpf,setCpf] = useState(null);
     const pickDocument = async () => {
   try {
     const result = await DocumentPicker.getDocumentAsync({
@@ -30,6 +32,54 @@ export default function Cadastro () {
     console.log('Erro ao selecionar arquivo: ', error);
   }
     };
+
+    function verificaCPF() {
+        if(cpf == null) return 0
+
+        let resto= ((cpf[0]*10) + (cpf[1]*9) + (cpf[2]*8) + (cpf[3]*7) + (cpf[4]*6) + (cpf[5]*5) + (cpf [6] *4)+
+        (cpf[7]*3) + (cpf[8]*2)) % 11
+
+
+        let digitoV1= (resto < 2) ? 0 : 11 - resto;
+
+        if(!(cpf[9]==digitoV1)){
+            return 0;
+        }
+
+        resto= ((cpf[0]*11) + (cpf[1]*10) + (cpf[2]*9) + (cpf[3]*8) + (cpf[4]*7) + (cpf[5]*6) + (cpf [6] *5)+
+        (cpf[7]*4) + (cpf[8]*3) + (digitoV1 * 2)) % 11
+        
+
+        let digitoV2 = (resto < 2) ? 0 : 11 - resto;
+
+        if(!(cpf[10]==digitoV2)){
+            
+            return 0;
+        }
+        return 1;
+
+
+    }
+
+    function checkOut(){
+        if(cpf == null ||cpf == 0)
+            alert('CPF não informado')
+        else if(!(verificaCPF()))
+            alert('CPF invalido')
+    }
+
+
+    async function cadastro() {
+        await setDoc(doc(db,"Users","3"),{
+            nome: 'Luck'
+        }).then(() => {
+            null
+        }).catch((erro) => {
+            alert(erro);
+        })
+       
+
+    }
     
 
     return(
@@ -46,6 +96,8 @@ export default function Cadastro () {
                 placeholder="Apenas Números"
                 underlineColorAndroid="transparent" // linha abaixo (opcional)
                 keyboardType="decimal-pad"
+                onChangeText={(cpf) => setCpf(cpf)}
+                maxLength={11}
             />
             
 
@@ -53,9 +105,22 @@ export default function Cadastro () {
 
                 <Switch
                     value={motoristaswitch}
-                    onValueChange={()=> setMotoristaSwitch(!motoristaswitch)}
+                    onValueChange={()=> {
+                        comissao ? setComissao(false) : null;
+                        setMotoristaSwitch(!motoristaswitch);
+                        
+                    }}
                 />
                 <Text style={{marginTop:13}}>Motorista</Text>
+
+                <Switch
+                    value={comissao}
+                    onValueChange={()=> {
+                        motoristaswitch ? setMotoristaSwitch(false) : null;
+                        setComissao(!comissao); 
+                    }}
+                />
+                <Text style={{marginTop:13}}>Comissão</Text>
             </View>
             
            
@@ -85,22 +150,7 @@ export default function Cadastro () {
                 underlineColorAndroid="transparent" // linha abaixo (opcional)
             />
 
-            <View style={{flexDirection:'row'}}>
-
-                <Checkbox
-                    value={comissao}
-                    onValueChange={setComissao}
-                />
-
-                <TouchableOpacity onPress={() => setComissao(!comissao)}>    
-                <Text style={{marginLeft:10}}>Membro da Comissão</Text>
-                </TouchableOpacity>
-
-        
-               
-
-
-            </View>
+           
 
             <Button title="Selecionar Arquivo" onPress={pickDocument} />
             {pickDoc === null ? null : (
@@ -113,6 +163,14 @@ export default function Cadastro () {
 
             </>
             )}
+
+    
+                <TouchableOpacity onPress={checkOut}>
+                    <View style={styles.AreaBotao}>
+                        <Text style={{color: '#FFF', textAlign: 'center', fontSize: 15}}>Enviar</Text>
+                    </View>
+                </TouchableOpacity>
+    
 
         </View>
 
@@ -137,6 +195,14 @@ const styles = StyleSheet.create({
   picker:{
      marginRight: 20 
 
+  },
+  AreaBotao: {
+    backgroundColor: '#1a6ebc',
+    marginTop:20,
+    width:400,
+    height:40,
+    justifyContent:'center',
+    alignItems:'center'
   }
 
  
