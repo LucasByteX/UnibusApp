@@ -5,9 +5,12 @@ import { Checkbox } from 'expo-checkbox';
 import { Picker } from '@react-native-picker/picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { doc, setDoc } from "firebase/firestore";
+import { createUserWithEmailAndPassword } from 'firebase/auth'
+
 import { db } from "../../firebaseConnection";
 import { auth } from "../../firebaseConnection";
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import SecurityInput from "../../assets/SecurityInput";
+
 
 
 export default function Cadastro() {
@@ -16,8 +19,15 @@ export default function Cadastro() {
     const [instituicao, setInstituicao] = useState(0);
     const [motoristaswitch, setMotoristaSwitch] = useState(0);
     const [comissao, setComissao] = useState(0);
-    const [pickDoc, setPickdDoc] = useState(null);
-    const [cpf, setCpf] = useState(null);
+    //const [pickDoc, setPickdDoc] = useState(null);
+    const [cpf, setCpf] = useState('');
+    const [passwordView1,setPasswordView1] = useState(false)
+    const [nome,setNome] = useState(null);
+    const [password,setPassword] = useState('');
+    const [passwordConfirm,setPasswordConfirm] = useState('');
+    const [matricula,setMatricula] = useState('');
+    const [email,setEmail] = useState('');
+
 
 
     //    const pickDocument = async () => {
@@ -77,10 +87,36 @@ export default function Cadastro() {
     }
 
     function checkOut() {
-        if (cpf == null || cpf == 0)
-            alert('CPF não informado')
-        else if (!(verificaCPF()))
-            alert('CPF invalido')
+        if (cpf ==''){
+            alert('CPF não informado');
+            return 0;
+        }
+        else if (!(verificaCPF())){
+            alert('CPF invalido');
+            return 0;
+        }
+    
+        else if (password == '' || password.length() < 6){
+            alert('Senha invalida');
+            return 0;
+            }
+        else if(password != passwordConfirm){
+            alert('Senha não confere');
+            return 0;
+        }
+        else if(nome == ''){
+            alert('Informe seu nome');
+            return 0;
+        }
+        else if(email == '') {
+            alert('Informe um email');
+        }
+        if (motoristaswitch)
+            return 1;
+        
+
+
+
     }
 
 
@@ -116,20 +152,12 @@ export default function Cadastro() {
             />
 
             <Text>Senha</Text>
-            <TextInput
-                placeholder="Digite sua senha"
-                underlineColorAndroid="transparent" // linha abaixo (opcional)
-                autoCapitalize="none"
-                autoCorrect={false}
-            />
+            <SecurityInput/>
+          
 
+            
             <Text>Confirme sua senha</Text>
-            <TextInput
-                placeholder="Digite sua senha novamente"
-                underlineColorAndroid="transparent" // linha abaixo (opcional)
-                autoCapitalize="none"
-                autoCorrect={false}
-            />
+            <SecurityInput/>
 
 
             <Text>CPF</Text>
@@ -247,6 +275,20 @@ const styles = StyleSheet.create({
         height: 40,
         justifyContent: 'center',
         alignItems: 'center'
+    },
+    AreaPassword:{
+         flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        marginBottom: 20,
+        minHeight: 40,
+        width: 300,
+        height: 50,
+        borderRadius: 10,
+    },
+    botaoPassword: {
+        
     }
 
 

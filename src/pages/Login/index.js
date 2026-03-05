@@ -5,6 +5,7 @@ import { Checkbox } from 'expo-checkbox';
 import { useNavigation } from '@react-navigation/native'
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import SecurityInput from "../../assets/SecurityInput";
 
 export default function Login() {
 
@@ -12,7 +13,7 @@ export default function Login() {
 
 
     const [email, setEmail] = useState();
-    const [password, setPassword] = useState();
+    const [password, setPassword] = useState('');
 
     const [passwordView, setPasswordView] = useState(false);
 
@@ -40,6 +41,9 @@ export default function Login() {
     return (
         <View style={styles.container}>
 
+
+   
+
             <Text>Login</Text>
 
 
@@ -54,35 +58,14 @@ export default function Login() {
             />
 
             <Text>Senha:</Text>
-            <View style={styles.areaPassword}>
-                <TextInput
-                    style={styles.textInputP}
-                    placeholder="Digite sua senha"
-                    underlineColorAndroid="transparent" // linha abaixo (opcional)
-                    onChangeText={(password) => setPassword(password)}
-                    secureTextEntry={passwordView ? false : true}
-                    autoCorrect={false}
-                    maxLength={20}
-                />
-
-                <TouchableOpacity
-                    style={styles.botaoPassword} onPress={() => setPasswordView(!passwordView)}>
-                    {passwordView ? (
-                        <>
-                            <FontAwesome5 name="lock-open" size={25} color="black" />
-                        </>
-                    ) : (
-                        <>
-                            <FontAwesome name="lock" size={30} color="black" />
-                        </>
-                    )}
-
-
-                </TouchableOpacity>
-
-
-            </View>
-
+            
+            <SecurityInput
+            onChangeText={(senha) => setPassword(senha)}
+            value={password}
+            />
+            <Text>
+                {password}
+            </Text>
 
 
 
@@ -119,6 +102,7 @@ export default function Login() {
 
 
 }
+
 
 const styles = StyleSheet.create({
     container: {
