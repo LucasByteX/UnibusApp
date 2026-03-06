@@ -3,45 +3,52 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useState } from 'react';
 
 
-export default function SecurityInput({value,onChangeText}) {
-    const [seguranca, setSeguranca] = useState(false);
+export default function SecurityInput({ value, onChangeText, placeholder }) {
+    const [seguranca, setSeguranca] = useState(0);
 
 
 
     return (
-        
-
-            <View style={styles.areaTexto}>
-                <View style={styles.areaTextoCima}>
-                    <TextInput
-                        style={styles.input}
-                        secureTextEntry={seguranca ? false : true}
-                        value={value}
-                        onChangeText={onChangeText}
-                        maxLength={20}
-
-                    />
-                </View>
-
-                <View style={styles.areaTextoBaixo}>
-                    <TouchableOpacity style={{ marginRight: 10 }} onPress={() => setSeguranca(!seguranca)}>
-
-                        {seguranca ?
-                            <>
-                                <FontAwesome name="unlock-alt" size={29} color="black" paddingLeft={5} />
-                            </> :
-
-                            <>
-                                <FontAwesome name="lock" size={29} color="black" paddingLeft={5} />
-                            </>
 
 
-                        }
 
-                    </TouchableOpacity>
-                </View>
 
+        <View style={styles.areaTexto}>
+            <View style={styles.areaTextoCima}>
+                <TextInput
+                    style={styles.input}
+                    secureTextEntry={seguranca ? false : true}
+                    value={value}
+                    onChangeText={onChangeText}
+                    maxLength={20}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder={placeholder}
+                    contextMenuHidden={true}
+
+                />
             </View>
+
+            <View style={styles.areaTextoBaixo}>
+                <TouchableOpacity style={{ marginRight: 10 }} onPress={() => setSeguranca(!seguranca)}>
+
+                    {seguranca ?
+                        <>
+                            <FontAwesome name="unlock-alt" size={29} color="black" paddingLeft={5} />
+                        </> :
+
+                        <>
+                            <FontAwesome name="lock" size={29} color="black" paddingLeft={5} />
+                        </>
+
+
+                    }
+
+                </TouchableOpacity>
+            </View>
+
+        </View>
+
 
 
 
@@ -59,18 +66,14 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         width: 300,
         height: 50,
-        borderRadius:10,
+        borderRadius: 10,
         flexDirection: 'row',
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        marginBottom:20
     },
-    inputx: {
-        marginBottom: 20,
-        minHeight: 40,
-        width: 300,
-        height: 50,
-        borderRadius: 10,
-        borderWidth: 1
+    input: {
+
 
     },
     areaTextoCima: {

@@ -62,6 +62,7 @@ export default function Login() {
             <SecurityInput
             onChangeText={(senha) => setPassword(senha)}
             value={password}
+            placeholder={"Digite sua Senha"}
             />
             <Text>
                 {password}
