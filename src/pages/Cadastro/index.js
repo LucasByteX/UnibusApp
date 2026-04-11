@@ -17,8 +17,8 @@ export default function Cadastro() {
 
 
     const [instituicao, setInstituicao] = useState(0);
-    const [motoristaswitch, setMotoristaSwitch] = useState(0);
-    const [comissao, setComissao] = useState(0);
+    const [motoristaswitch, setMotoristaSwitch] = useState(false);
+    const [comissao, setComissao] = useState(false);
     const [cpf, setCpf] = useState('');
     const [nome, setNome] = useState(null);
     const [password, setPassword] = useState('');
@@ -40,8 +40,20 @@ export default function Cadastro() {
 
 
 
-    async function cadastrar() {
-        //await createUserWithEmailAndPassword(auth, )
+    async function cadastrarNoBanco() { /*
+        await createUserWithEmailAndPassword(auth, email,password).then((user) =>
+        {
+            await setDoc(doc(db,"Requisicoes", user.uid),{
+                nome: nome
+                
+            }).then()
+            
+        }
+        ).catch(err =>{
+            alert(err);
+        })
+    */
+    alert("Okay");
     }
 
 
@@ -156,10 +168,11 @@ export default function Cadastro() {
 
     function cadastro() {
 
-        if (checkOut())
-            alert('Cadastrado');
+        
 
-
+        if (checkOut()){  
+            cadastrarNoBanco();
+        }
 
 
 
@@ -201,6 +214,19 @@ export default function Cadastro() {
                     value={email}
                 />
 
+                <Text style={styles.texto}>CPF</Text>
+                <TextInput
+                    placeholder="Apenas Números"
+                    underlineColorAndroid="transparent" // linha abaixo (opcional)
+                    keyboardType="numeric"
+                    onChangeText={(cpf) => setCpf(formatarCPF(cpf))}
+                    maxLength={14}
+                    style={styles.textInput}
+                    value={cpf}
+                    contextMenuHidden={true}
+
+                />
+
                 <Text style={styles.texto}>Senha</Text>
                 <SecurityInput
                     onChangeText={(senha) => setPassword(senha)}
@@ -218,18 +244,6 @@ export default function Cadastro() {
                 />
 
 
-                <Text style={styles.texto}>CPF</Text>
-                <TextInput
-                    placeholder="Apenas Números"
-                    underlineColorAndroid="transparent" // linha abaixo (opcional)
-                    keyboardType="numeric"
-                    onChangeText={(cpf) => setCpf(formatarCPF(cpf))}
-                    maxLength={14}
-                    style={styles.textInput}
-                    value={cpf}
-                    contextMenuHidden={true}
-
-                />
 
 
                 <View style={{ flexDirection: 'row' }}>
@@ -265,7 +279,7 @@ export default function Cadastro() {
                 </View>
 
 
-                {motoristaswitch ? null : (
+                {!motoristaswitch && (
                     <>
                         <Picker
                             style={styles.picker}
@@ -294,14 +308,7 @@ export default function Cadastro() {
                             value={matricula}
                         />
 
-                        {/*
-            <Button title="Selecionar Arquivo" onPress={pickDocument} />
-            {pickDoc === null ? null : (
-                <>
-                <Text>Arquivo Selecionado : {pickDoc}</Text>
-                </>
-            )}
-                */}
+
 
 
 

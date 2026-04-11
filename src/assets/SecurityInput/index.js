@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 
 export default function SecurityInput({ value, onChangeText, placeholder }) {
-    const [seguranca, setSeguranca] = useState(0);
+    const [seguranca, setSeguranca] = useState(false);
 
 
 
@@ -35,7 +35,9 @@ export default function SecurityInput({ value, onChangeText, placeholder }) {
                     {seguranca ?
                         <>
                             <FontAwesome name="unlock-alt" size={29} color="black" paddingLeft={5} />
-                        </> :
+                        </>
+
+                        :
 
                         <>
                             <FontAwesome name="lock" size={29} color="black" paddingLeft={5} />
@@ -70,7 +72,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom:20
+        marginBottom: 20
     },
     input: {
 

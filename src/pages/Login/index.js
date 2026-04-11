@@ -31,7 +31,9 @@ export default function Login() {
 
 
         else
-            alert('Usuario Invalido')
+            alert('Usuario ou Senha inválido')
+        setPassword('');
+
 
     }
 

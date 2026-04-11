@@ -11,12 +11,16 @@ export default function Rotas({cargo}) {
 
     return(
     <View style={styles.container}>
+        <Text>Rotas Disponiveis</Text>
         {!(cargo === "Comissao" || cargo==="Motorista") ? null : (
           <>
+          <TouchableOpacity style={styles.botton}>
           <Text>Adicionar Rota</Text>
+          </TouchableOpacity>
           </>
         )}
-        <Text>Rotas Disponiveis</Text>
+        
+        
     </View>
     );
 
@@ -31,4 +35,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  botton:{
+    backgroundColor: 'red'
+  },
+  botton2:{
+    backgroundColor: 'blue'
+  }
 });
