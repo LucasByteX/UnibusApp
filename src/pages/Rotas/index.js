@@ -3,6 +3,7 @@ import { Checkbox } from 'expo-checkbox';
 import Cadastro from "../Cadastro";
 import {useNavigation} from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import ObjetoRota from '../../assets/ObjetoRota';
 
 
 export default function Rotas({cargo}) {
@@ -11,14 +12,8 @@ export default function Rotas({cargo}) {
 
     return(
     <View style={styles.container}>
-        <Text>Rotas Disponiveis</Text>
-        {!(cargo === "Comissao" || cargo==="Motorista") ? null : (
-          <>
-          <TouchableOpacity style={styles.botton}>
-          <Text>Adicionar Rota</Text>
-          </TouchableOpacity>
-          </>
-        )}
+        <ObjetoRota/>
+        <ObjetoRota/>
         
         
     </View>
