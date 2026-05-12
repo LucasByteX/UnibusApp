@@ -1,91 +1,68 @@
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { useState } from 'react';
-
+import { StyleSheet, TextInput, TouchableOpacity, View, Animated } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useState, useRef } from 'react';
 
 export default function SecurityInput({ value, onChangeText, placeholder }) {
-    const [seguranca, setSeguranca] = useState(false);
+  const [visivel, setVisivel] = useState(false);
+  const [focado, setFocado] = useState(false);
+  const borderAnim = useRef(new Animated.Value(0)).current;
 
+  function onFocus() {
+    setFocado(true);
+    Animated.timing(borderAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+  }
+  function onBlur() {
+    setFocado(false);
+    Animated.timing(borderAnim, { toValue: 0, duration: 200, useNativeDriver: false }).start();
+  }
 
+  const borderColor = borderAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#2a3a5c', '#1a56db'],
+  });
 
-    return (
-
-
-
-
-        <View style={styles.areaTexto}>
-            <View style={styles.areaTextoCima}>
-                <TextInput
-                    style={styles.input}
-                    secureTextEntry={seguranca ? false : true}
-                    value={value}
-                    onChangeText={onChangeText}
-                    maxLength={20}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    placeholder={placeholder}
-                    contextMenuHidden={true}
-
-                />
-            </View>
-
-            <View style={styles.areaTextoBaixo}>
-                <TouchableOpacity style={{ marginRight: 10 }} onPress={() => setSeguranca(!seguranca)}>
-
-                    {seguranca ?
-                        <>
-                            <FontAwesome name="unlock-alt" size={29} color="black" paddingLeft={5} />
-                        </>
-
-                        :
-
-                        <>
-                            <FontAwesome name="lock" size={29} color="black" paddingLeft={5} />
-                        </>
-
-
-                    }
-
-                </TouchableOpacity>
-            </View>
-
-        </View>
-
-
-
-
-    );
+  return (
+    <Animated.View style={[styles.wrapper, { borderBottomColor: borderColor }]}>
+      <TextInput
+        style={styles.input}
+        secureTextEntry={!visivel}
+        value={value}
+        onChangeText={onChangeText}
+        maxLength={20}
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder={placeholder}
+        placeholderTextColor="#4a5878"
+        contextMenuHidden={true}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      />
+      <TouchableOpacity onPress={() => setVisivel(!visivel)} style={styles.iconBtn} activeOpacity={0.7}>
+        <MaterialCommunityIcons
+          name={visivel ? 'eye-outline' : 'eye-off-outline'}
+          size={22}
+          color={focado ? '#1a56db' : '#4a5878'}
+        />
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#fff',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    areaTexto: {
-        borderWidth: 1,
-        width: 300,
-        height: 50,
-        borderRadius: 10,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20
-    },
-    input: {
-
-
-    },
-    areaTextoCima: {
-        flex: 1,
-        justifyContent: 'flex-start',
-
-    },
-    areaTextoBaixo: {
-
-        justifyContent: 'flex-end',
-    }
+  wrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1.5,
+    marginBottom: 24,
+    paddingBottom: 6,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: '#e8edf8',
+    paddingVertical: 4,
+  },
+  iconBtn: {
+    padding: 4,
+  },
 });
-
