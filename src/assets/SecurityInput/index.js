@@ -1,10 +1,17 @@
-import { StyleSheet, TextInput, TouchableOpacity, View, Animated } from 'react-native';
+import { StyleSheet, TextInput, TouchableOpacity, Animated } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState, useRef } from 'react';
 
+const C = {
+  bordaSutil: '#243d2a',
+  verde:      '#3d8b5c',
+  textoClaro: '#dfe8da',
+  textoSuave: '#3d5c43',
+};
+
 export default function SecurityInput({ value, onChangeText, placeholder }) {
   const [visivel, setVisivel] = useState(false);
-  const [focado, setFocado] = useState(false);
+  const [focado, setFocado]   = useState(false);
   const borderAnim = useRef(new Animated.Value(0)).current;
 
   function onFocus() {
@@ -18,7 +25,7 @@ export default function SecurityInput({ value, onChangeText, placeholder }) {
 
   const borderColor = borderAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#2a3a5c', '#1a56db'],
+    outputRange: [C.bordaSutil, C.verde],
   });
 
   return (
@@ -32,16 +39,17 @@ export default function SecurityInput({ value, onChangeText, placeholder }) {
         autoCapitalize="none"
         autoCorrect={false}
         placeholder={placeholder}
-        placeholderTextColor="#4a5878"
+        placeholderTextColor={C.textoSuave}
         contextMenuHidden={true}
         onFocus={onFocus}
         onBlur={onBlur}
+        selectionColor={C.verde}
       />
       <TouchableOpacity onPress={() => setVisivel(!visivel)} style={styles.iconBtn} activeOpacity={0.7}>
         <MaterialCommunityIcons
           name={visivel ? 'eye-outline' : 'eye-off-outline'}
           size={22}
-          color={focado ? '#1a56db' : '#4a5878'}
+          color={focado ? C.verde : C.textoSuave}
         />
       </TouchableOpacity>
     </Animated.View>
@@ -59,10 +67,8 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-    color: '#e8edf8',
+    color: '#dfe8da',
     paddingVertical: 4,
   },
-  iconBtn: {
-    padding: 4,
-  },
+  iconBtn: { padding: 4 },
 });

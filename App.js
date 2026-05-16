@@ -1,38 +1,22 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import Login from './src/pages/Login';
-import Cadastro from './src/pages/Cadastro';
-import Menu from './src/pages/Menu';
-const Stack = createNativeStackNavigator();
+/**
+ * App.js — Ponto de entrada do aplicativo
+ *
+ * Estrutura:
+ *   <AuthProvider>        → contexto global do usuário logado
+ *     <AppNavigator />    → decide qual stack mostrar (Auth ou App)
+ *   </AuthProvider>
+ *
+ * O AppNavigator já contém o <NavigationContainer>.
+ */
 
+import React from 'react';
+import { AuthProvider } from './AuthContext';
+import AppNavigator from './AppNavigator';
 
 export default function App() {
-
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-        }}>
-
-        <Stack.Screen name="Login" component={Login} />
-        <Stack.Screen name="Cadastro" component={Cadastro} />
-        <Stack.Screen name="Menu" component={Menu} />
-
-
-
-      </Stack.Navigator>
-    </NavigationContainer>
+    <AuthProvider>
+      <AppNavigator />
+    </AuthProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
