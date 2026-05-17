@@ -5,43 +5,22 @@ import { auth, db } from './src/firebaseConnection';
 
 const AuthContext = createContext(null);
 
-export function AuthProvider({ children }) {
-
-  const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-  if (!firebaseUser) {
-    setUsuario(null);
-    return;
-  }
-  try {
-    const snap = await getDoc(doc(db, 'Users', firebaseUser.uid));
-    if (snap.exists()) {
-      const d = snap.data();
-      setUsuario({
-        uid: firebaseUser.uid,
-        nome:        d.nome        || d.Nome        || '',
-        email:       d.email       || d.Email       || '',
-        cargo:       d.cargo       || d.Cargo       || 'Membro',
-        cpf:         d.cpf         || d.CPF         || '',
-        status:      d.status      || 'ativo',
-        instituicao: d.instituicao || d.Universidade || '',
-        curso:       d.curso       || d.Curso       || '',
-        matricula:   String(d.matricula || d.Matricula || ''),
-        criadoEm:    d.criadoEm    || '',
-      });
-    } else {
-      setUsuario(null);
-      await auth.signOut();
+// Tenta buscar o documento do usuário até 5 vezes com intervalo crescente.
+// Necessário porque o onAuthStateChanged pode disparar antes do setDoc
+// do cadastro propagar no Firestore.
+async function buscarUsuarioComRetry(uid, tentativas = 5, intervaloMs = 800) {
+  for (let i = 0; i < tentativas; i++) {
+    const snap = await getDoc(doc(db, 'Users', uid));
+    if (snap.exists()) return snap;
+    if (i < tentativas - 1) {
+      await new Promise(res => setTimeout(res, intervaloMs * (i + 1)));
     }
-  } catch(e) {
-    console.log('Erro ao buscar usuário:', e);
-    // Mantém na tela de loading por mais 3s antes de deslogar
-    setTimeout(() => setUsuario(null), 3000);
   }
-});
+  return null;
+}
 
-  const [usuario, setUsuario] = useState(undefined); // undefined = ainda carregando
-  // usuario = null → não logado
-  // usuario = { uid, nome, email, cargo, status, ... } → logado
+export function AuthProvider({ children }) {
+  const [usuario, setUsuario] = useState(undefined);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -50,14 +29,28 @@ export function AuthProvider({ children }) {
         return;
       }
       try {
-        const snap = await getDoc(doc(db, 'Users', firebaseUser.uid));
-        if (snap.exists()) {
-          setUsuario({ uid: firebaseUser.uid, ...snap.data() });
+        const snap = await buscarUsuarioComRetry(firebaseUser.uid);
+        if (snap) {
+          const d = snap.data();
+          setUsuario({
+            uid:         firebaseUser.uid,
+            nome:        d.nome        || d.Nome        || '',
+            email:       d.email       || d.Email       || '',
+            cargo:       d.cargo       || d.Cargo       || 'Membro',
+            cpf:         d.cpf         || d.CPF         || '',
+            status:      (d.status     || 'ativo').toLowerCase(),
+            instituicao: d.instituicao || d.Universidade || '',
+            curso:       d.curso       || d.Curso       || '',
+            matricula:   String(d.matricula || d.Matricula || ''),
+            criadoEm:    d.criadoEm    || '',
+          });
         } else {
+          // Documento realmente não existe após várias tentativas
           setUsuario(null);
           await auth.signOut();
         }
-      } catch {
+      } catch (e) {
+        console.log('Erro ao buscar usuário:', e);
         setUsuario(null);
       }
     });
@@ -79,7 +72,6 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-// Níveis de permissão
 export function temPermissao(cargo, nivelMinimo) {
   const niveis = { Membro: 0, Motorista: 1, Comissao: 2, Administrador: 3 };
   return (niveis[cargo] ?? 0) >= (niveis[nivelMinimo] ?? 0);

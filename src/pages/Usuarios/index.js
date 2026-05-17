@@ -58,7 +58,7 @@ const FILTROS = [
 function UsuarioCard({
   usuario, podeTudo, usuarioLogadoUid,
   onAprovar, onRejeitar, onRejeitarBanir,
-  onBanir, onDesbanir, onAlterarCargo,
+  onBanir, onDesbanir, onExpulsar, onAlterarCargo,
 }) {
   const { nome, email, cargo, status, instituicao, curso, matricula, cpf } = usuario;
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.analise;
@@ -176,16 +176,27 @@ function UsuarioCard({
               </>
             )}
 
-            {/* ATIVO: Banir — não aparece para si mesmo nem se não tiver permissão */}
+            {/* ATIVO: Expulsar + Banir — não aparece para si mesmo nem se não tiver permissão */}
             {status === 'ativo' && !ehSiMesmo && podeAgir && (
-              <TouchableOpacity
-                style={[card.btn, card.btnBanir]}
-                onPress={() => onBanir(usuario.uid, nome)}
-                activeOpacity={0.8}
-              >
-                <MaterialCommunityIcons name="cancel" size={14} color="#fff" />
-                <Text style={card.btnTexto}>Banir</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={[card.btn, card.btnExpulsar]}
+                  onPress={() => onExpulsar(usuario.uid, usuario.cpf, nome)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons name="account-remove-outline" size={14} color="#fff" />
+                  <Text style={card.btnTexto}>Expulsar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[card.btn, card.btnBanir]}
+                  onPress={() => onBanir(usuario.uid, nome)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons name="cancel" size={14} color="#fff" />
+                  <Text style={card.btnTexto}>Banir</Text>
+                </TouchableOpacity>
+              </>
             )}
 
             {/* BANIDO: Desbanir */}
@@ -242,10 +253,11 @@ const card = StyleSheet.create({
   cargoChipTexto:  { fontSize: 12, fontWeight: '600', color: C.textoSuave },
   acoes:      { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   btn:        { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 9, paddingHorizontal: 13, borderRadius: 10 },
-  btnAprovar: { backgroundColor: C.verde },
-  btnRejeitar:{ backgroundColor: C.ocre  },
-  btnBanir:   { backgroundColor: C.erro  },
-  btnTexto:   { fontSize: 12, fontWeight: '700', color: '#fff' },
+  btnAprovar:  { backgroundColor: C.verde      },
+  btnRejeitar: { backgroundColor: C.ocre       },
+  btnExpulsar: { backgroundColor: '#7a3d8b'    }, // roxo — expulsão reversível
+  btnBanir:    { backgroundColor: C.erro       },
+  btnTexto:    { fontSize: 12, fontWeight: '700', color: '#fff' },
 });
 
 // ─── TELA PRINCIPAL ───────────────────────────────────────────────────────────
@@ -283,8 +295,23 @@ export default function Usuarios() {
   }, []);
 
   // ── Ações ────────────────────────────────────────────────────────────────
+  async function atualizarStatus(uid, cpf, novoStatus) {
+    await updateDoc(doc(db, 'Users', uid), { status: novoStatus });
+    if (cpf) {
+      const cpfLimpo = String(cpf).replace(/\D/g, '');
+      const u = usuarios.find(x => x.uid === uid);
+      try {
+        await updateDoc(doc(db, 'CPFs', cpfLimpo), {
+          status: novoStatus,
+          email:  u?.email || '',
+        });
+      } catch {}
+    }
+  }
+
   async function aprovar(uid) {
-    try { await updateDoc(doc(db, 'Users', uid), { status: 'ativo' }); }
+    const u = usuarios.find(x => x.uid === uid);
+    try { await atualizarStatus(uid, u?.cpf, 'ativo'); }
     catch { Alert.alert('Erro', 'Não foi possível aprovar.'); }
   }
 
@@ -292,6 +319,7 @@ export default function Usuarios() {
   // O usuário ainda existe no Auth, mas sem documento não consegue logar
   // e pode se cadastrar novamente (o cadastro recriará o documento)
   function rejeitar(uid, nome) {
+    const u = usuarios.find(x => x.uid === uid);
     Alert.alert(
       'Rejeitar Cadastro',
       `Deseja rejeitar o cadastro de ${nome}?\n\nEle poderá tentar se cadastrar novamente.`,
@@ -299,37 +327,96 @@ export default function Usuarios() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Rejeitar', style: 'destructive', onPress: async () => {
           try {
-            await updateDoc(doc(db, 'Users', uid), { status: 'rejeitado' });
-          } catch {
-            Alert.alert('Erro', 'Não foi possível rejeitar.');
-          }
+            // Apaga o documento Users — email some do Auth context
+            await deleteDoc(doc(db, 'Users', uid));
+            // Mantém CPFs com status rejeitado e email salvo
+            // para o fluxo de recadastro identificar e permitir nova tentativa
+            if (u?.cpf) {
+              const cpfLimpo = String(u.cpf).replace(/\D/g, '');
+              try {
+                await updateDoc(doc(db, 'CPFs', cpfLimpo), {
+                  status: 'rejeitado',
+                  email:  u.email || '',
+                });
+              } catch {}
+            }
+          } catch { Alert.alert('Erro', 'Não foi possível rejeitar.'); }
         }},
       ]
     );
   }
 
   function rejeitarBanir(uid, nome) {
+    const u = usuarios.find(x => x.uid === uid);
     Alert.alert(
       'Rejeitar e Banir',
       `Deseja rejeitar e banir ${nome}?\n\nEle não poderá acessar o app nem se cadastrar novamente com este CPF.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Rejeitar e Banir', style: 'destructive', onPress: async () => {
-          try { await updateDoc(doc(db, 'Users', uid), { status: 'banido' }); }
+          try { await atualizarStatus(uid, u?.cpf, 'banido'); }
           catch { Alert.alert('Erro', 'Não foi possível rejeitar e banir.'); }
         }},
       ]
     );
   }
 
+  function expulsar(uid, cpf, nome) {
+    const u = usuarios.find(x => x.uid === uid);
+    Alert.alert(
+      'Expulsar Usuário',
+      `Deseja expulsar ${nome}?\n\nA conta será apagada mas ele poderá criar uma nova conta futuramente.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Expulsar',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Confirmar Expulsão',
+              `Tem certeza? Esta ação não pode ser desfeita.\n\n"${nome}" será removido permanentemente.`,
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Sim, expulsar',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      // Apaga documento Users
+                      await deleteDoc(doc(db, 'Users', uid));
+                      // Mantém CPFs com status rejeitado e email
+                      // para permitir recadastro futuramente
+                      if (cpf) {
+                        const cpfLimpo = String(cpf).replace(/\D/g, '');
+                        try {
+                          await updateDoc(doc(db, 'CPFs', cpfLimpo), {
+                            status: 'rejeitado',
+                            email:  u?.email || '',
+                          });
+                        } catch {}
+                      }
+                    } catch (e) {
+                      Alert.alert('Erro', `Não foi possível expulsar: ${e.message}`);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }
+
   function banir(uid, nome) {
+    const u = usuarios.find(x => x.uid === uid);
     Alert.alert(
       'Banir Usuário',
       `Deseja banir ${nome}? Ele não conseguirá mais acessar o app.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Banir', style: 'destructive', onPress: async () => {
-          try { await updateDoc(doc(db, 'Users', uid), { status: 'banido' }); }
+          try { await atualizarStatus(uid, u?.cpf, 'banido'); }
           catch { Alert.alert('Erro', 'Não foi possível banir.'); }
         }},
       ]
@@ -337,7 +424,8 @@ export default function Usuarios() {
   }
 
   async function desbanir(uid) {
-    try { await updateDoc(doc(db, 'Users', uid), { status: 'ativo' }); }
+    const u = usuarios.find(x => x.uid === uid);
+    try { await atualizarStatus(uid, u?.cpf, 'ativo'); }
     catch { Alert.alert('Erro', 'Não foi possível desbanir.'); }
   }
 
@@ -471,6 +559,7 @@ export default function Usuarios() {
                 onRejeitarBanir={rejeitarBanir}
                 onBanir={banir}
                 onDesbanir={desbanir}
+                onExpulsar={expulsar}
                 onAlterarCargo={alterarCargo}
               />
             ))

@@ -7,8 +7,11 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from 'firebase/auth';
+import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConnection';
 import SecurityInput from '../../assets/SecurityInput';
 
@@ -142,7 +145,6 @@ function ModalSucesso({ visible, onClose }) {
     <Modal transparent animationType="none" visible={visible} onRequestClose={onClose}>
       <Animated.View style={[suc.overlay, { opacity: fade }]}>
         <Animated.View style={[suc.box, { transform: [{ scale }] }]}>
-          {/* Ícone com brilho */}
           <View style={suc.iconeArea}>
             <MaterialCommunityIcons name="leaf-circle-outline" size={52} color={C.verdeClaro} />
           </View>
@@ -151,7 +153,6 @@ function ModalSucesso({ visible, onClose }) {
             Seu pedido foi recebido e está em análise pela comissão do transporte de Areia-PB.{'\n\n'}
             Você receberá uma resposta em breve. Pode fazer login, mas o acesso completo ficará disponível após a aprovação.
           </Text>
-          {/* Divisor com folha */}
           <View style={suc.divider}>
             <View style={suc.divLinha} />
             <MaterialCommunityIcons name="leaf" size={12} color={C.verdeClaro} style={{ marginHorizontal: 8 }} />
@@ -196,18 +197,18 @@ const suc = StyleSheet.create({
 export default function Cadastro() {
   const navigation = useNavigation();
 
-  const [nome, setNome]                   = useState('');
-  const [email, setEmail]                 = useState('');
-  const [cpf, setCpf]                     = useState('');
-  const [password, setPassword]           = useState('');
+  const [nome, setNome]                       = useState('');
+  const [email, setEmail]                     = useState('');
+  const [cpf, setCpf]                         = useState('');
+  const [password, setPassword]               = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
-  const [instituicao, setInstituicao]     = useState(0);
-  const [curso, setCurso]                 = useState('');
-  const [matricula, setMatricula]         = useState('');
-  const [ehMotorista, setEhMotorista]     = useState(false);
-  const [ehComissao, setEhComissao]       = useState(false);
-  const [carregando, setCarregando]       = useState(false);
-  const [modalSucesso, setModalSucesso]   = useState(false);
+  const [instituicao, setInstituicao]         = useState(0);
+  const [curso, setCurso]                     = useState('');
+  const [matricula, setMatricula]             = useState('');
+  const [ehMotorista, setEhMotorista]         = useState(false);
+  const [ehComissao, setEhComissao]           = useState(false);
+  const [carregando, setCarregando]           = useState(false);
+  const [modalSucesso, setModalSucesso]       = useState(false);
   const ultimoEnvio = useRef(null);
 
   function validarLocal() {
@@ -244,52 +245,148 @@ export default function Cadastro() {
 
     setCarregando(true);
     const cpfLimpo = cpf.replace(/\D/g, '');
+    const cargo    = ehMotorista ? 'Motorista' : ehComissao ? 'Comissao' : 'Membro';
+    const dadosNovos = {
+      nome:      nome.trim(),
+      email:     email.trim().toLowerCase(),
+      cpf:       cpfLimpo,
+      cargo,
+      status:    'analise',
+      criadoEm:  new Date().toISOString(),
+      ...(ehMotorista ? {} : {
+        instituicao: UNIVERSIDADES.find(u => u.key === instituicao)?.nome || '',
+        curso:       curso.trim(),
+        matricula:   matricula.trim(),
+      }),
+    };
+
+    ultimoEnvio.current = Date.now();
 
     try {
-      // 1. Verifica CPF já registrado
+      // ── 1. Verifica se CPF já existe ────────────────────────────────────────
       const snapCPF = await getDoc(doc(db, 'CPFs', cpfLimpo));
+
       if (snapCPF.exists()) {
-        const snapUser = await getDoc(doc(db, 'Users', snapCPF.data().uid));
-        const status = snapUser.exists() ? snapUser.data().status : 'desconhecido';
+        const uidAntigo   = snapCPF.data().uid;
+        const statusAtual = (snapCPF.data().status || 'desconhecido').toLowerCase();
+
+        if (statusAtual === 'rejeitado') {
+          // ── CPF rejeitado: recadastra ────────────────────────────────────────
+          let uid = uidAntigo;
+          const emailAntigo = snapCPF.data().email || '';
+
+          if (emailAntigo === email.trim().toLowerCase()) {
+            // Mesmo email → conta já existe no Auth, confirma a senha
+            try {
+              const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+              uid = cred.user.uid;
+              // NÃO faz signOut aqui
+            } catch (e) {
+              if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+                Alert.alert('Senha incorreta', 'Este e-mail já possui uma conta. Verifique sua senha.');
+                setCarregando(false);
+                return;
+              }
+              throw e;
+            }
+          } else {
+            // Email diferente → cria nova conta no Auth
+            await deleteDoc(doc(db, 'CPFs', cpfLimpo));
+            try {
+              const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+              uid = cred.user.uid;
+              // NÃO faz signOut aqui
+            } catch (e) {
+              if (e.code === 'auth/email-already-in-use') {
+                Alert.alert('E-mail em uso', 'Este e-mail já está vinculado a outra conta.');
+                setCarregando(false);
+                return;
+              }
+              throw e;
+            }
+            // Remove documento antigo
+            try { await deleteDoc(doc(db, 'Users', uidAntigo)); } catch {}
+          }
+
+          // Salva dados atualizados enquanto ainda está logado
+          await setDoc(doc(db, 'Users', uid), dadosNovos);
+          await setDoc(doc(db, 'CPFs', cpfLimpo), {
+            uid,
+            status: 'analise',
+            email:  email.trim().toLowerCase(),
+          });
+          // Só desloga depois de salvar tudo
+          await auth.signOut();
+          setModalSucesso(true);
+          setCarregando(false);
+          return;
+        }
+
+        // CPF com outros status — bloqueia
         const msgs = {
-          banido:      'Este CPF está banido do sistema.',
-          analise:     'Este CPF já possui um cadastro aguardando análise.',
-          ativo:       'Este CPF já possui uma conta ativa no sistema.',
-          desconhecido:'Este CPF já foi utilizado em um cadastro.',
+          banido:       'Este CPF está banido do sistema.',
+          analise:      'Este CPF já possui um cadastro aguardando análise.',
+          ativo:        'Este CPF já possui uma conta ativa no sistema.',
+          desconhecido: 'Este CPF já foi utilizado em um cadastro.',
         };
-        Alert.alert('CPF já cadastrado', msgs[status] || msgs.desconhecido);
+        Alert.alert('CPF já cadastrado', msgs[statusAtual] || msgs.desconhecido);
         setCarregando(false);
         return;
       }
 
-      // 2. Cria usuário no Authentication
-      ultimoEnvio.current = Date.now();
-      const credencial = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const uid = credencial.user.uid;
-      const cargo = ehMotorista ? 'Motorista' : ehComissao ? 'Comissao' : 'Membro';
+      // ── 2. CPF novo: fluxo normal de cadastro ───────────────────────────────
+      let uid;
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        uid = cred.user.uid;
+        // NÃO faz signOut aqui — precisa estar logado para o setDoc funcionar
+      } catch (e) {
+        if (e.code === 'auth/email-already-in-use') {
+          const snapCPFEmail = await getDoc(doc(db, 'CPFs', cpfLimpo));
+          if (!snapCPFEmail.exists()) {
+            Alert.alert('E-mail em uso', 'Este e-mail já está em uso por outra conta.');
+            setCarregando(false);
+            return;
+          }
+          const statusEmail = (snapCPFEmail.data().status || 'desconhecido').toLowerCase();
+          if (statusEmail !== 'rejeitado') {
+            const msgs = {
+              analise:      'Este e-mail já possui um cadastro aguardando análise.',
+              ativo:        'Este e-mail já está em uso por uma conta ativa.',
+              banido:       'Este e-mail está banido do sistema.',
+              desconhecido: 'Este e-mail já está em uso por outra conta.',
+            };
+            Alert.alert('E-mail em uso', msgs[statusEmail] || msgs.desconhecido);
+            setCarregando(false);
+            return;
+          }
+          try {
+            const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+            uid = cred.user.uid;
+            // NÃO faz signOut aqui também
+          } catch (loginErr) {
+            if (loginErr.code === 'auth/wrong-password' || loginErr.code === 'auth/invalid-credential') {
+              Alert.alert('E-mail em uso', 'Este e-mail já está em uso. Verifique sua senha ou use outro e-mail.');
+            } else {
+              Alert.alert('Erro', loginErr.message);
+            }
+            setCarregando(false);
+            return;
+          }
+        } else {
+          throw e;
+        }
+      }
 
-      // 3. Salva em Users/{uid}
-      const dadosUsuario = {
-        nome: nome.trim(),
-        email: email.trim().toLowerCase(),
-        cpf: cpfLimpo,
-        cargo,
+      // Salva no Firestore enquanto ainda está logado
+      await setDoc(doc(db, 'Users', uid), dadosNovos);
+      await setDoc(doc(db, 'CPFs', cpfLimpo), {
+        uid,
         status: 'analise',
-        criadoEm: new Date().toISOString(),
-        ...(ehMotorista ? {} : {
-          instituicao: UNIVERSIDADES.find(u => u.key === instituicao)?.nome || '',
-          curso: curso.trim(),
-          matricula: matricula.trim(),
-        }),
-      };
-      await setDoc(doc(db, 'Users', uid), dadosUsuario);
-
-      // 4. Índice CPF → UID
-      await setDoc(doc(db, 'CPFs', cpfLimpo), { uid });
-
-      // 5. Desloga (precisa de aprovação)
+        email:  email.trim().toLowerCase(),
+      });
+      // Só desloga depois de salvar tudo
       await auth.signOut();
-
       setModalSucesso(true);
 
     } catch (erro) {
@@ -318,7 +415,6 @@ export default function Cadastro() {
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bgProfundo }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar barStyle="light-content" backgroundColor={C.bgProfundo} />
 
-      {/* Manchas decorativas */}
       <View style={styles.manchaVerde} />
       <View style={styles.manchaOcre} />
 
@@ -327,7 +423,6 @@ export default function Cadastro() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.voltarBtn}>
           <MaterialCommunityIcons name="arrow-left" size={20} color={C.textoMedio} />
         </TouchableOpacity>
@@ -340,17 +435,13 @@ export default function Cadastro() {
           Preencha os dados abaixo. Seu cadastro passará por{'\n'}análise da comissão antes de ser aprovado.
         </Text>
 
-        {/* Divisor folha */}
         <View style={styles.dividerFolha}>
           <View style={styles.divLinha} />
           <MaterialCommunityIcons name="leaf" size={13} color={C.verdeClaro} style={{ marginHorizontal: 8 }} />
           <View style={styles.divLinha} />
         </View>
 
-        {/* Card formulário */}
         <View style={styles.card}>
-
-          {/* Dados Pessoais */}
           <Text style={styles.secaoTitulo}>
             <MaterialCommunityIcons name="account-outline" size={13} color={C.ocre} />
             {'  '}Dados Pessoais
@@ -361,7 +452,6 @@ export default function Cadastro() {
 
           <View style={styles.divisor} />
 
-          {/* Segurança */}
           <Text style={styles.secaoTitulo}>
             <MaterialCommunityIcons name="lock-outline" size={13} color={C.ocre} />
             {'  '}Segurança
@@ -373,19 +463,17 @@ export default function Cadastro() {
 
           <View style={styles.divisor} />
 
-          {/* Tipo de Usuário */}
           <Text style={styles.secaoTitulo}>
             <MaterialCommunityIcons name="shield-account-outline" size={13} color={C.ocre} />
             {'  '}Tipo de Usuário
           </Text>
           <Text style={styles.hint}>Deixe ambos desmarcados se for passageiro comum.</Text>
           <View style={styles.toggleRow}>
-            <OpcaoToggle label="Motorista" icon="steering"            ativo={ehMotorista} onPress={toggleMotorista} />
+            <OpcaoToggle label="Motorista" icon="steering"             ativo={ehMotorista} onPress={toggleMotorista} />
             <View style={{ width: 10 }} />
             <OpcaoToggle label="Comissão"  icon="shield-check-outline" ativo={ehComissao}  onPress={toggleComissao}  />
           </View>
 
-          {/* Dados Acadêmicos */}
           {!ehMotorista && (
             <>
               <View style={styles.divisor} />
@@ -393,7 +481,6 @@ export default function Cadastro() {
                 <MaterialCommunityIcons name="school-outline" size={13} color={C.ocre} />
                 {'  '}Dados Acadêmicos
               </Text>
-
               <Text style={styles.miniLabel}>Instituição</Text>
               <View style={styles.pickerWrapper}>
                 <Picker
@@ -411,13 +498,11 @@ export default function Cadastro() {
                   ))}
                 </Picker>
               </View>
-
               <CampoTexto label="Curso" value={curso} onChangeText={setCurso} />
               <CampoTexto label="Matrícula" value={matricula} onChangeText={setMatricula} keyboardType="numeric" maxLength={15} autoCapitalize="none" />
             </>
           )}
 
-          {/* Botão */}
           <TouchableOpacity
             style={[styles.botao, carregando && { opacity: 0.6 }]}
             onPress={cadastrar}
