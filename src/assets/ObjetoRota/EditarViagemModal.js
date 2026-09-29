@@ -25,6 +25,17 @@ const C = {
   textoSuave: '#3d5c43',
 };
 
+// Converte "DD/MM/AAAA" + "H:MM" para timestamp Unix (ms)
+function parsearTimestamp(data, hora) {
+  try {
+    const [dia, mes, ano] = data.split('/').map(Number);
+    const [h, min]        = hora.split(':').map(Number);
+    return new Date(ano, mes - 1, dia, h, min, 0, 0).getTime();
+  } catch {
+    return null;
+  }
+}
+
 // ─── CAMPO FORA DO COMPONENTE PRINCIPAL ──────────────────────────────────────
 // IMPORTANTE: definir aqui fora evita que o componente seja recriado a cada
 // re-render do modal (o que desmontava o TextInput e perdia o foco do teclado)
@@ -84,7 +95,14 @@ export default function EditarViagemModal({ visible, onClose, onSave, dadosViage
   }, [visible]);
 
   function handleSave() {
-    onSave({ rota, hora, data, motorista, limite: parseInt(limite) || 40 });
+    onSave({
+      rota,
+      hora,
+      data,
+      motorista,
+      limite: parseInt(limite) || 40,
+      partida: parsearTimestamp(data, hora),
+    });
   }
 
   return (

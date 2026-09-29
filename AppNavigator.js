@@ -19,11 +19,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useAuth, temPermissao } from './AuthContext';
-import Login    from './src/pages/Login';
-import Cadastro from './src/pages/Cadastro';
-import Rotas    from './src/pages/Rotas';       // tela de viagens (index.js renomeado)
-import Usuarios from './src/pages/Usuarios';
-import Perfil   from './src/pages/Perfil';
+import Login          from './src/pages/Login';
+import Cadastro       from './src/pages/Cadastro';
+import Rotas          from './src/pages/Rotas';
+import Usuarios       from './src/pages/Usuarios';
+import Perfil         from './src/pages/Perfil';
+import EsqueciSenha   from './src/pages/EsqueciSenha';
+import MapaMotorista  from './src/pages/MapaMotorista';
 
 // ─── PALETA AREIA-PB ─────────────────────────────────────────────────────────
 const C = {
@@ -128,12 +130,14 @@ export default function AppNavigator() {
       {usuario && usuario.status === 'ativo' ? (
         // Usuário logado e aprovado → app principal
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-          <AuthStack.Screen name="Menu" component={MenuTabs} />
+          <AuthStack.Screen name="Menu"          component={MenuTabs}      />
+          <AuthStack.Screen name="MapaMotorista" component={MapaMotorista} />
         </AuthStack.Navigator>
       ) : (
         // Não logado ou em análise/banido → auth
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="Login"    component={Login} />
+          <AuthStack.Screen name="EsqueciSenha" component={EsqueciSenha} />
           <AuthStack.Screen name="Cadastro" component={Cadastro} />
         </AuthStack.Navigator>
       )}

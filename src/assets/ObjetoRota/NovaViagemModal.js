@@ -45,6 +45,18 @@ function getProximaData() {
   return `${d}/${m}/${base.getFullYear()}`;
 }
 
+// Converte "DD/MM/AAAA" + "H:MM" para timestamp Unix (ms)
+// Usado para salvar campo `partida` no Firestore e habilitar regras de bloqueio
+function parsearTimestamp(data, hora) {
+  try {
+    const [dia, mes, ano] = data.split('/').map(Number);
+    const [h, min]        = hora.split(':').map(Number);
+    return new Date(ano, mes - 1, dia, h, min, 0, 0).getTime();
+  } catch {
+    return null;
+  }
+}
+
 const ABAS = [
   { id: 'template', label: 'Pré-pronto', icon: 'lightning-bolt-outline' },
   { id: 'custom', label: 'Personalizado', icon: 'pencil-outline' },
@@ -111,14 +123,26 @@ export default function NovaViagemModal({ visible, onClose, onSave }) {
   function handleSave() {
     if (aba === 'template') {
       if (!rotaSel || !motoristaSel) return;
-      onSave({ rota: rotaSel.rota, hora: HORA_PADRAO, data: getProximaData(), motorista: motoristaSel, limite: LIMITE_PADRAO });
-    } else {
+      const dataFinal = getProximaData();
+      const horaFinal = HORA_PADRAO;
       onSave({
-        rota: rotaCustom,
-        hora: horaCustom || HORA_PADRAO,
-        data: dataCustom || getProximaData(),
+        rota: rotaSel.rota,
+        hora: horaFinal,
+        data: dataFinal,
+        motorista: motoristaSel,
+        limite: LIMITE_PADRAO,
+        partida: parsearTimestamp(dataFinal, horaFinal),
+      });
+    } else {
+      const dataFinal = dataCustom || getProximaData();
+      const horaFinal = horaCustom || HORA_PADRAO;
+      onSave({
+        rota:      rotaCustom,
+        hora:      horaFinal,
+        data:      dataFinal,
         motorista: motoristaCustom,
-        limite: parseInt(limiteCustom) || LIMITE_PADRAO,
+        limite:    parseInt(limiteCustom) || LIMITE_PADRAO,
+        partida:   parsearTimestamp(dataFinal, horaFinal),
       });
     }
     onClose();

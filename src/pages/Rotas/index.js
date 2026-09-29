@@ -21,9 +21,42 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   collection, onSnapshot, doc, addDoc, updateDoc,
-  deleteDoc, setDoc, getDoc, serverTimestamp,
+  deleteDoc, setDoc, getDoc, serverTimestamp, increment,
 } from 'firebase/firestore';
 import { MaterialCommunityIcons, Entypo, FontAwesome } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import { getApp } from 'firebase/app';
+import { getFirestore, doc as firestoreDoc, updateDoc as firestoreUpdate } from 'firebase/firestore';
+
+// ─── BACKGROUND TASK ──────────────────────────────────────────────────────────
+// Precisa ser definida no escopo global (fora de qualquer componente)
+// É executada pelo sistema mesmo com app em background ou tela desligada
+const TASK_RASTREAMENTO = 'unibus-rastreamento-motorista';
+
+TaskManager.defineTask(TASK_RASTREAMENTO, async ({ data, error }) => {
+  if (error) { console.log('Erro rastreamento background:', error); return; }
+  if (!data) return;
+  const { locations } = data;
+  const loc = locations?.[0];
+  if (!loc) return;
+
+  // Recupera o viagemId salvo anteriormente
+  try {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const viagemId = await AsyncStorage.getItem('rastreamento_viagem_id');
+    if (!viagemId) return;
+    // Usa instância do Firestore já inicializada pelo app
+    const dbInstance = getFirestore(getApp());
+    await firestoreUpdate(firestoreDoc(dbInstance, 'Rastreamento', viagemId), {
+      lat:          loc.coords.latitude,
+      lng:          loc.coords.longitude,
+      atualizadoEm: Date.now(),
+    });
+  } catch {
+    // Sem rede — o sistema tentará novamente na próxima posição
+  }
+});
 
 import { db } from '../../firebaseConnection';
 import { useAuth, temPermissao } from '../../../AuthContext';
@@ -54,13 +87,300 @@ const CARGO_COR = {
   Membro:        '#3d5c43',
 };
 
-// ─── HELPERS DE PERMISSÃO ─────────────────────────────────────────────────────
-// Pode gerenciar viagens (criar/editar/excluir): Motorista+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 function podeGerenciarViagens(cargo) { return temPermissao(cargo, 'Motorista'); }
-// Pode ver lista de inscritos: Motorista+
 function podeVerInscritos(cargo)     { return temPermissao(cargo, 'Motorista'); }
-// Pode se inscrever: Membro, Comissao, Administrador (NÃO Motorista)
 function podeSeInscrever(cargo)      { return cargo === 'Membro' || cargo === 'Comissao' || cargo === 'Administrador'; }
+// Pode fazer chamada (confirmar presença): Motorista+
+function podeFazerChamada(cargo)     { return temPermissao(cargo, 'Motorista'); }
+// Pode ver lista de presença: todos
+function podeVerPresenca()           { return true; }
+
+// Retorna true se faltam menos de 30min para a partida
+function dentroDoBloqueioDeinscricao(partida) {
+  if (!partida) return false;
+  return Date.now() >= partida - 30 * 60 * 1000;
+}
+
+// Converte "DD/MM/AAAA" + "H:MM" ou "HH:MM" para timestamp Unix (ms) em horário local
+function parsearTimestamp(data, hora) {
+  try {
+    if (!data || !hora) return null;
+    const partsData = data.split('/');
+    if (partsData.length !== 3) return null;
+    const dia = parseInt(partsData[0], 10);
+    const mes = parseInt(partsData[1], 10);
+    const ano = parseInt(partsData[2], 10);
+    const partsHora = hora.split(':');
+    if (partsHora.length !== 2) return null;
+    const h   = parseInt(partsHora[0], 10);
+    const min = parseInt(partsHora[1], 10);
+    if (isNaN(dia) || isNaN(mes) || isNaN(ano) || isNaN(h) || isNaN(min)) return null;
+    // Usa setFullYear/setHours para garantir horário local sem interferência de UTC
+    const d = new Date();
+    d.setFullYear(ano, mes - 1, dia);
+    d.setHours(h, min, 0, 0);
+    return d.getTime();
+  } catch { return null; }
+}
+
+// ─── MODAL DE PRESENÇA ────────────────────────────────────────────────────────
+function PresencaModal({ visible, onClose, viagemId, viagem }) {
+  const { usuario } = useAuth();
+  const cargo       = usuario?.cargo;
+  const fazChamada  = podeFazerChamada(cargo);
+
+  const [presenca,    setPresenca]    = useState([]);
+  const [carregando,  setCarregando]  = useState(true);
+  const slideAnim = useRef(new Animated.Value(60)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible || !viagemId) return;
+    setCarregando(true);
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, damping: 18, stiffness: 200, useNativeDriver: true }),
+    ]).start();
+
+    const unsub = onSnapshot(
+      collection(db, 'Viagens', viagemId, 'Presenca'),
+      (snap) => {
+        const lista = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        lista.sort((a, b) => (a.ordem || 999) - (b.ordem || 999));
+        setPresenca(lista);
+        setCarregando(false);
+      },
+      () => setCarregando(false)
+    );
+    return unsub;
+  }, [visible, viagemId]);
+
+  function fechar() {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 60, duration: 180, useNativeDriver: true }),
+    ]).start(() => { slideAnim.setValue(60); fadeAnim.setValue(0); onClose(); });
+  }
+
+  async function confirmarPresenca(inscrito) {
+    // Verifica se já está na lista de presença
+    const jaConfirmado = presenca.some(p => p.uid === inscrito.uid);
+    if (jaConfirmado) {
+      Alert.alert('Já confirmado', `${inscrito.nome} já está na lista de presença.`);
+      return;
+    }
+    try {
+      const ordem = presenca.length + 1;
+      await setDoc(doc(db, 'Viagens', viagemId, 'Presenca', inscrito.uid), {
+        nome:          inscrito.nome        || '',
+        instituicao:   inscrito.instituicao || '',
+        tipo:          inscrito.tipo        || '',
+        ordem,
+        confirmadoEm:  serverTimestamp(),
+        confirmadoPor: usuario.nome         || '',
+      });
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível confirmar presença.');
+    }
+  }
+
+  async function removerPresenca(uid, nome) {
+    Alert.alert('Remover', `Remover ${nome} da lista de presença?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Remover', style: 'destructive', onPress: async () => {
+        try {
+          await deleteDoc(doc(db, 'Viagens', viagemId, 'Presenca', uid));
+          // Reordena os restantes
+          const restantes = presenca.filter(p => p.uid !== uid).sort((a, b) => a.ordem - b.ordem);
+          await Promise.all(restantes.map((p, i) =>
+            updateDoc(doc(db, 'Viagens', viagemId, 'Presenca', p.uid), { ordem: i + 1 })
+          ));
+        } catch { Alert.alert('Erro', 'Não foi possível remover.'); }
+      }},
+    ]);
+  }
+
+  // Inscritos da viagem para a chamada (Motorista+)
+  const [inscritos, setInscritos] = useState([]);
+  useEffect(() => {
+    if (!visible || !viagemId || !fazChamada) return;
+    const unsub = onSnapshot(
+      collection(db, 'Viagens', viagemId, 'Inscritos'),
+      (snap) => setInscritos(snap.docs.map(d => ({ uid: d.id, ...d.data() }))),
+      () => {}
+    );
+    return unsub;
+  }, [visible, viagemId, fazChamada]);
+
+  const idaPresenca = presenca.filter(p => p.tipo === 'ida' || p.tipo === 'ida_volta');
+
+  function ListaPresenca({ lista, label }) {
+    return (
+      <View style={pres.secao}>
+        <View style={pres.secaoHeader}>
+          <MaterialCommunityIcons
+            name={label === 'PRAÇA' ? 'map-marker-outline' : 'arrow-left-circle-outline'}
+            size={15} color={C.ocre}
+          />
+          <Text style={pres.secaoTitulo}>{label}</Text>
+          <View style={pres.contBadge}>
+            <Text style={pres.contTexto}>{lista.length}</Text>
+          </View>
+        </View>
+        {lista.length === 0 ? (
+          <Text style={pres.vazio}>Nenhuma presença confirmada</Text>
+        ) : (
+          lista.map((p) => (
+            <View key={p.uid} style={pres.item}>
+              <View style={pres.ordemBadge}>
+                <Text style={pres.ordemTexto}>{p.ordem}°</Text>
+              </View>
+              <View style={pres.itemInfo}>
+                <Text style={pres.itemNome}>{p.nome || 'Sem nome'}</Text>
+                {p.instituicao ? <Text style={pres.itemInst}>{p.instituicao}</Text> : null}
+              </View>
+              {fazChamada && (
+                <TouchableOpacity onPress={() => removerPresenca(p.uid, p.nome)} style={pres.removerBtn}>
+                  <MaterialCommunityIcons name="close" size={14} color={C.erro} />
+                </TouchableOpacity>
+              )}
+            </View>
+          ))
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <Modal transparent animationType="none" visible={visible} onRequestClose={fechar}>
+      <Animated.View style={[pres.overlay, { opacity: fadeAnim }]}>
+        <Animated.View style={[pres.box, { transform: [{ translateY: slideAnim }] }]}>
+
+          {/* Header */}
+          <View style={pres.header}>
+            <View style={pres.headerIcon}>
+              <MaterialCommunityIcons name="clipboard-check-outline" size={20} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={pres.headerTitulo}>Lista de Presença</Text>
+              <Text style={pres.headerSub}>
+                {presenca.length} confirmado{presenca.length !== 1 ? 's' : ''} · ordem de chegada
+              </Text>
+            </View>
+            <TouchableOpacity onPress={fechar} style={pres.closeBtn}>
+              <MaterialCommunityIcons name="close" size={20} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Seção de chamada — só Motorista+ */}
+          {fazChamada && inscritos.length > 0 && (
+            <View style={pres.chamadaArea}>
+              <Text style={pres.chamadaTitulo}>Confirmar chegada</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {inscritos
+                  .filter(i => !presenca.some(p => p.uid === i.uid) && (i.tipo === 'ida' || i.tipo === 'ida_volta'))
+                  .map(i => (
+                    <TouchableOpacity
+                      key={i.uid}
+                      style={pres.chamadaChip}
+                      onPress={() => confirmarPresenca(i)}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialCommunityIcons name="account-check-outline" size={14} color={C.verde} />
+                      <Text style={pres.chamadaChipTexto} numberOfLines={1}>{i.nome}</Text>
+                    </TouchableOpacity>
+                  ))}
+              </ScrollView>
+              {inscritos.filter(i => !presenca.some(p => p.uid === i.uid) && (i.tipo === 'ida' || i.tipo === 'ida_volta')).length === 0 && (
+                <Text style={pres.chamadaVazio}>Todos os inscritos foram confirmados</Text>
+              )}
+            </View>
+          )}
+
+          {/* Listas de presença */}
+          {carregando ? (
+            <View style={pres.loading}>
+              <ActivityIndicator color={C.verde} />
+            </View>
+          ) : (
+            <ScrollView style={pres.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, gap: 8 }}>
+              <ListaPresenca lista={idaPresenca} label="PRAÇA" />
+              <View style={{ height: 8 }} />
+            </ScrollView>
+          )}
+
+          <TouchableOpacity style={pres.fecharBtn} onPress={fechar} activeOpacity={0.8}>
+            <Text style={pres.fecharTexto}>Fechar</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const pres = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(11,17,13,0.75)',
+    justifyContent: 'flex-end', paddingBottom: 20, paddingHorizontal: 16,
+  },
+  box: {
+    backgroundColor: C.bgCard, borderRadius: 24, overflow: 'hidden',
+    maxHeight: '88%', borderWidth: 1, borderColor: C.bordaSutil,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3, shadowRadius: 20, elevation: 12,
+  },
+  header: {
+    backgroundColor: C.bgSutil, flexDirection: 'row', alignItems: 'center',
+    gap: 12, padding: 18, borderBottomWidth: 1, borderBottomColor: C.bordaSutil,
+  },
+  headerIcon: {
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: C.verde, justifyContent: 'center', alignItems: 'center',
+  },
+  headerTitulo: { fontSize: 17, fontWeight: '800', color: C.textoClaro },
+  headerSub:    { fontSize: 12, color: C.textoSuave, marginTop: 1 },
+  closeBtn:     { padding: 4 },
+  chamadaArea: {
+    padding: 14, borderBottomWidth: 1, borderBottomColor: C.bordaSutil,
+    backgroundColor: C.bgSutil, gap: 10,
+  },
+  chamadaTitulo: { fontSize: 11, fontWeight: '800', color: C.ocre, letterSpacing: 0.8, textTransform: 'uppercase' },
+  chamadaChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#1a3d26', borderRadius: 20,
+    paddingVertical: 8, paddingHorizontal: 12,
+    borderWidth: 1, borderColor: `${C.verde}55`,
+  },
+  chamadaChipTexto: { fontSize: 13, fontWeight: '600', color: C.textoClaro, maxWidth: 120 },
+  chamadaVazio: { fontSize: 12, color: C.textoSuave, textAlign: 'center', paddingVertical: 4 },
+  loading: { padding: 40, alignItems: 'center' },
+  scroll:  { maxHeight: 380 },
+  secao: {
+    backgroundColor: C.bgSutil, borderRadius: 14,
+    padding: 14, borderWidth: 1, borderColor: C.bordaSutil,
+  },
+  secaoHeader:  { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 12 },
+  secaoTitulo:  { fontSize: 11, fontWeight: '800', color: C.ocre, letterSpacing: 1, textTransform: 'uppercase', flex: 1 },
+  contBadge:    { backgroundColor: C.bgProfundo, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  contTexto:    { fontSize: 11, fontWeight: '700', color: C.textoMedio },
+  vazio:        { fontSize: 13, color: C.textoSuave, textAlign: 'center', paddingVertical: 8 },
+  item: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.bordaSutil,
+  },
+  ordemBadge: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: C.verde, justifyContent: 'center', alignItems: 'center',
+  },
+  ordemTexto:  { fontSize: 13, fontWeight: '900', color: '#fff' },
+  itemInfo:    { flex: 1 },
+  itemNome:    { fontSize: 14, fontWeight: '600', color: C.textoClaro },
+  itemInst:    { fontSize: 11, color: C.textoSuave, marginTop: 2 },
+  removerBtn:  { padding: 6 },
+  fecharBtn:   { margin: 16, backgroundColor: C.bgSutil, borderRadius: 14, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: C.bordaSutil },
+  fecharTexto: { fontSize: 15, fontWeight: '600', color: C.textoMedio },
+});
 
 // ─── MODAL DE INSCRITOS ───────────────────────────────────────────────────────
 function InscritosModal({ visible, onClose, viagemId }) {
@@ -221,19 +541,21 @@ const ins = StyleSheet.create({
 });
 
 // ─── CARD DE VIAGEM ───────────────────────────────────────────────────────────
-function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos }) {
+function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos, onVerPresenca, onToggleRastreamento, onVerMapa, rastreamentoAtivo }) {
   const { usuario } = useAuth();
   const cargo       = usuario?.cargo;
   const gerenciar   = podeGerenciarViagens(cargo);
   const verList     = podeVerInscritos(cargo);
   const inscrever   = podeSeInscrever(cargo);
+  const ehMotorista = cargo === 'Motorista';
   const scaleAnim   = useRef(new Animated.Value(1)).current;
 
   const {
     id, rota, pessoasIda = 0, pessoasVolta = 0,
-    hora, data, limite = 40, motorista, inscritoTipo,
+    hora, data, limite = 40, motorista, inscritoTipo, partida,
   } = viagem;
 
+  const bloqueado     = dentroDoBloqueioDeinscricao(parsearTimestamp(data, hora));
   const idaExcedida   = pessoasIda   > limite;
   const voltaExcedida = pessoasVolta > limite;
   const inscrito      = !!inscritoTipo;
@@ -244,7 +566,6 @@ function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos }
   return (
     <Animated.View style={[styles.cardWrapper, { transform: [{ scale: scaleAnim }] }]}>
       <View style={styles.card}>
-        {/* Faixa lateral — verde se inscrito, ocre se gerenciador, cinza se neutro */}
         <View style={[styles.cardStripe, {
           backgroundColor: inscrito ? C.verde : gerenciar ? C.ocre : C.bordaSutil
         }]} />
@@ -258,6 +579,43 @@ function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos }
             </View>
 
             <View style={styles.acoesBtns}>
+              {/* Botão do mapa — aparece para não-motoristas quando rastreamento está ativo */}
+              {!ehMotorista && rastreamentoAtivo && (
+                <TouchableOpacity
+                  style={[styles.acaoBtn, { backgroundColor: '#1a3d26', borderColor: `${C.verde}66` }]}
+                  onPress={() => onVerMapa(viagem)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons name="map-marker-radius-outline" size={16} color={C.verde} />
+                </TouchableOpacity>
+              )}
+              {/* Botão de rastreamento — só Motorista */}
+              {ehMotorista && (
+                <TouchableOpacity
+                  style={[styles.acaoBtn, rastreamentoAtivo
+                    ? { backgroundColor: C.verde, borderColor: C.verde }
+                    : { borderColor: `${C.verde}55` }
+                  ]}
+                  onPress={() => onToggleRastreamento(viagem)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name={rastreamentoAtivo ? 'map-marker' : 'map-marker-outline'}
+                    size={16}
+                    color={rastreamentoAtivo ? '#fff' : C.verde}
+                  />
+                </TouchableOpacity>
+              )}
+              {/* Lista de presença — todos podem ver */}
+              {bloqueado && (
+                <TouchableOpacity
+                  style={[styles.acaoBtn, { borderColor: `${C.verde}66` }]}
+                  onPress={() => onVerPresenca(id, viagem)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons name="clipboard-check-outline" size={16} color={C.verde} />
+                </TouchableOpacity>
+              )}
               {/* Ver inscritos — Motorista+ */}
               {verList && (
                 <TouchableOpacity
@@ -303,6 +661,13 @@ function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos }
                 <Text style={styles.infoPillTexto}>{val}</Text>
               </View>
             ))}
+            {/* Badge de bloqueio */}
+            {bloqueado && (
+              <View style={[styles.infoPill, { borderColor: `${C.ocre}55`, backgroundColor: '#2a1a00' }]}>
+                <MaterialCommunityIcons name="lock-clock" size={12} color={C.ocre} />
+                <Text style={[styles.infoPillTexto, { color: C.ocre }]}>Inscrições encerradas</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.divider} />
@@ -332,8 +697,8 @@ function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos }
               ))}
             </View>
 
-            {/* Botão de inscrição — Membro, Comissao, Administrador */}
-            {inscrever && (
+            {/* Botão de inscrição — bloqueado 30min antes */}
+            {inscrever && !bloqueado && (
               <View style={styles.botaoArea}>
                 <TouchableOpacity
                   onPress={() => onInscrever(viagem)}
@@ -372,9 +737,10 @@ function ViagemCard({ viagem, onEditar, onExcluir, onInscrever, onVerInscritos }
 }
 
 // ─── TELA PRINCIPAL ───────────────────────────────────────────────────────────
-export default function Rotas() {
+export default function Rotas({ navigation }) {
   const { usuario } = useAuth();
   const cargo = usuario?.cargo;
+  const ehMotorista = cargo === 'Motorista';
 
   const [viagens, setViagens]               = useState([]);
   const [carregando, setCarregando]         = useState(true);
@@ -383,9 +749,14 @@ export default function Rotas() {
   const [mostrarNova, setMostrarNova]       = useState(false);
   const [mostrarInscrever, setMostrarInscrever] = useState(false);
   const [mostrarInscritos, setMostrarInscritos] = useState(false);
-  const [viagemInscritos, setViagemInscritos]   = useState(null); // id da viagem cujos inscritos estão sendo vistos
+  const [mostrarPresenca, setMostrarPresenca]   = useState(false);
+  const [viagemInscritos, setViagemInscritos]   = useState(null);
+  const [viagemPresenca, setViagemPresenca]     = useState(null);
   const [viagemAlvo, setViagemAlvo]         = useState(null);
   const [viagemEditando, setViagemEditando] = useState(null);
+  // Rastreamento: { [viagemId]: { ativo, expiraEm } }
+  const [rastreamentos, setRastreamentos]   = useState({});
+  const rastreamentoTimerRef = useRef(null);
 
   // ── Cooldown persistido por data/hora no AsyncStorage ─────────────────────
   // Chave: "cooldown_inscricao_{uid}_{viagemId}"
@@ -446,8 +817,159 @@ export default function Rotas() {
     return unsub;
   }, [usuario.uid]);
 
+  // ── Listener de rastreamentos ativos ──────────────────────────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'Rastreamento'),
+      (snap) => {
+        const obj = {};
+        snap.docs.forEach(d => {
+          const dados = d.data();
+          // Ignora expirados
+          if (!dados.expiraEm || Date.now() > dados.expiraEm) return;
+          obj[d.id] = dados;
+        });
+        setRastreamentos(obj);
+      },
+      () => {}
+    );
+    return unsub;
+  }, []);
+
+  // ── Rastreamento do Motorista ─────────────────────────────────────────────
+  async function toggleRastreamento(viagem) {
+    const jaAtivo = rastreamentos[viagem.id]?.ativo &&
+      rastreamentos[viagem.id]?.motoristaUid === usuario.uid;
+
+    if (jaAtivo) {
+      await pararRastreamento(viagem.id);
+      Alert.alert('Rastreamento encerrado', 'Sua localização não está mais sendo compartilhada.');
+    } else {
+      // 1. Permissão de foreground
+      const { status: fg } = await Location.requestForegroundPermissionsAsync();
+      if (fg !== 'granted') {
+        Alert.alert('Permissão necessária', 'Autorize o acesso à localização para ativar o rastreamento.');
+        return;
+      }
+      // 2. Permissão de background (necessária para funcionar com tela desligada)
+      const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+      if (bg !== 'granted') {
+        Alert.alert(
+          'Permissão de background necessária',
+          'Para o rastreamento continuar com a tela desligada, vá em Configurações → Aplicativos → Unibus → Permissões → Localização e selecione "Sempre permitir".',
+          [{ text: 'Entendido' }]
+        );
+        return;
+      }
+      Alert.alert(
+        'Ativar Rastreamento',
+        'Sua localização será compartilhada em tempo real com os passageiros por até 3 horas, mesmo com a tela desligada. Deseja continuar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Ativar', onPress: () => iniciarRastreamento(viagem) },
+        ]
+      );
+    }
+  }
+
+  async function iniciarRastreamento(viagem) {
+    try {
+      const expiraEm = Date.now() + 3 * 60 * 60 * 1000;
+
+      // Salva viagemId no AsyncStorage para a task de background acessar
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem('rastreamento_viagem_id', viagem.id);
+
+      // Salva estado inicial no Firestore
+      await setDoc(doc(db, 'Rastreamento', viagem.id), {
+        ativo:         true,
+        motoristaUid:  usuario.uid,
+        motoristaNome: usuario.nome || '',
+        rotaNome:      viagem.rota  || '',
+        lat:           null,
+        lng:           null,
+        atualizadoEm:  Date.now(),
+        expiraEm,
+      });
+
+      // Para qualquer task anterior antes de iniciar nova
+      const taskAtiva = await TaskManager.isTaskRegisteredAsync(TASK_RASTREAMENTO);
+      if (taskAtiva) {
+        await Location.stopLocationUpdatesAsync(TASK_RASTREAMENTO);
+      }
+
+      // Inicia rastreamento em background com notificação persistente
+      await Location.startLocationUpdatesAsync(TASK_RASTREAMENTO, {
+        accuracy:          Location.Accuracy.Balanced,
+        timeInterval:      15_000,    // mínimo 15s entre atualizações
+        distanceInterval:  50,        // ou 50m de deslocamento
+        deferredUpdatesInterval:  15_000,
+        deferredUpdatesDistance:  50,
+        pausesUpdatesAutomatically: false,
+        foregroundService: {
+          notificationTitle: 'Unibus — Rastreamento ativo',
+          notificationBody:  'Sua localização está sendo compartilhada com os passageiros.',
+          notificationColor: '#3d8b5c',
+        },
+        // Mantém ativo mesmo sem movimento (ônibus parado no ponto)
+        activityType: Location.ActivityType.AutomotiveNavigation,
+      });
+
+      // Timer de expiração automática (3h)
+      rastreamentoTimerRef.current = setTimeout(async () => {
+        await pararRastreamento(viagem.id);
+        Alert.alert('Rastreamento encerrado', 'O tempo máximo de 3 horas foi atingido.');
+      }, 3 * 60 * 60 * 1000);
+
+    } catch (e) {
+      Alert.alert('Erro', `Não foi possível iniciar o rastreamento: ${e.message}`);
+    }
+  }
+
+  async function pararRastreamento(viagemId) {
+    // Para a task de background
+    try {
+      const taskAtiva = await TaskManager.isTaskRegisteredAsync(TASK_RASTREAMENTO);
+      if (taskAtiva) {
+        await Location.stopLocationUpdatesAsync(TASK_RASTREAMENTO);
+      }
+    } catch {}
+
+    // Limpa timer
+    if (rastreamentoTimerRef.current) {
+      clearTimeout(rastreamentoTimerRef.current);
+      rastreamentoTimerRef.current = null;
+    }
+
+    // Limpa viagemId do AsyncStorage
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.removeItem('rastreamento_viagem_id');
+    } catch {}
+
+    // Marca como inativo no Firestore
+    try {
+      await updateDoc(doc(db, 'Rastreamento', viagemId), { ativo: false });
+    } catch {}
+  }
+
+  // Para o rastreamento se o componente desmontar
+  useEffect(() => {
+    return () => {
+      if (rastreamentoTimerRef.current) clearTimeout(rastreamentoTimerRef.current);
+      // Não para a task de background ao desmontar —
+      // o motorista pode navegar para outra tela e o rastreamento continua
+    };
+  }, []);
+
   // ── Inscrever ─────────────────────────────────────────────────────────────
   async function clickInscrever(viagem) {
+    // Bloqueia inscrição 30min antes da partida
+    const partida = viagem.partida ?? parsearTimestamp(viagem.data, viagem.hora);
+    if (dentroDoBloqueioDeinscricao(partida)) {
+      Alert.alert('Inscrições encerradas', 'As inscrições para esta viagem foram encerradas 30 minutos antes da partida.');
+      return;
+    }
     const restante = await segundosRestantes(viagem.id);
     if (restante > 0) {
       Alert.alert('Aguarde', `Espere ${restante}s antes de alterar sua inscrição novamente.`);
@@ -506,18 +1028,18 @@ export default function Rotas() {
     }
   }
 
-  // ── Editar — FIX: passa apenas os campos escalares, sem inscritoTipo ──────
   async function salvarEdicao(dados) {
     if (!viagemEditando?.id) return;
     try {
-      // Garante que só campos válidos do Firestore são enviados
-      const { rota, hora, data, motorista, limite } = dados;
+      const { rota, hora, data, motorista, limite, partida } = dados;
       await updateDoc(doc(db, 'Viagens', viagemEditando.id), {
         ...(rota      !== undefined ? { rota }      : {}),
         ...(hora      !== undefined ? { hora }      : {}),
         ...(data      !== undefined ? { data }      : {}),
         ...(motorista !== undefined ? { motorista } : {}),
         ...(limite    !== undefined ? { limite: Number(limite) } : {}),
+        // Recalcula partida se data ou hora mudaram
+        partida: partida ?? parsearTimestamp(data ?? viagemEditando.data, hora ?? viagemEditando.hora),
       });
     } catch (e) {
       Alert.alert('Erro', `Não foi possível salvar: ${e.message}`);
@@ -546,6 +1068,7 @@ export default function Rotas() {
         data:         dados.data       || '',
         motorista:    dados.motorista  || '',
         limite:       Number(dados.limite) || 40,
+        partida:      dados.partida    || parsearTimestamp(dados.data, dados.hora) || null,
         pessoasIda:   0,
         pessoasVolta: 0,
         criadoEm:     serverTimestamp(),
@@ -621,6 +1144,17 @@ export default function Rotas() {
                 onExcluir={excluirViagem}
                 onInscrever={clickInscrever}
                 onVerInscritos={(id) => { setViagemInscritos(id); setMostrarInscritos(true); }}
+                onVerPresenca={(id, viagem) => { setViagemPresenca({ id, viagem }); setMostrarPresenca(true); }}
+                onToggleRastreamento={toggleRastreamento}
+                onVerMapa={(viagem) => navigation.navigate('MapaMotorista', {
+                  viagemId:     viagem.id,
+                  rotaNome:     viagem.rota      || '',
+                  motoristaNome: viagem.motorista || '',
+                })}
+                rastreamentoAtivo={
+                  !!(rastreamentos[v.id]?.ativo &&
+                     Date.now() < (rastreamentos[v.id]?.expiraEm ?? 0))
+                }
               />
             ))
           )}
@@ -666,6 +1200,14 @@ export default function Rotas() {
         visible={mostrarInscritos}
         viagemId={viagemInscritos}
         onClose={() => { setMostrarInscritos(false); setViagemInscritos(null); }}
+      />
+
+      {/* Modal presença */}
+      <PresencaModal
+        visible={mostrarPresenca}
+        viagemId={viagemPresenca?.id}
+        viagem={viagemPresenca?.viagem}
+        onClose={() => { setMostrarPresenca(false); setViagemPresenca(null); }}
       />
     </SafeAreaView>
   );

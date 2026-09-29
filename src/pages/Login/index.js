@@ -101,57 +101,45 @@ export default function Login() {
   }, []);
 
   async function entrar() {
-  if (!email.trim()) { Alert.alert('Atenção', 'Informe seu e-mail.'); return; }
-  if (!password)     { Alert.alert('Atenção', 'Informe sua senha.'); return; }
+    if (!email.trim()) { Alert.alert('Atenção', 'Informe seu e-mail.'); return; }
+    if (!password)     { Alert.alert('Atenção', 'Informe sua senha.'); return; }
 
-  setCarregando(true);
-  console.log('1 - Tentando logar:', email.trim());
-  
-  try {
-    const credencial = await signInWithEmailAndPassword(auth, email.trim(), password);
-    console.log('2 - Auth OK, uid:', credencial.user.uid);
-    
-    const snap = await getDoc(doc(db, 'Users', credencial.user.uid));
-    console.log('3 - Snap existe?', snap.exists());
-    console.log('4 - Dados:', snap.data());
+    setCarregando(true);
+    try {
+      const credencial = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const snap = await getDoc(doc(db, 'Users', credencial.user.uid));
 
-    if (!snap.exists()) {
-      console.log('5 - Usuário não encontrado no Firestore');
-      Alert.alert('Erro', 'Usuário não encontrado no sistema.');
-      await auth.signOut();
+      if (!snap.exists()) {
+        Alert.alert('Erro', 'Usuário não encontrado no sistema.');
+        await auth.signOut();
+        setCarregando(false);
+        return;
+      }
+
+      const { status } = snap.data();
+
+      if (status?.toLowerCase() === 'banido') {
+        Alert.alert('Acesso Bloqueado', 'Sua conta foi banida. Entre em contato com a comissão.');
+        await auth.signOut();
+        setCarregando(false);
+        return;
+      }
+
+      if (status?.toLowerCase() === 'analise') {
+        Alert.alert('Em Análise', 'Seu cadastro ainda está sendo analisado pela comissão.');
+        await auth.signOut();
+        setCarregando(false);
+        return;
+      }
+
+      setPassword('');
+
+    } catch (erro) {
+      Alert.alert('Erro ao entrar', traduzirErroAuth(erro.code));
+    } finally {
       setCarregando(false);
-      return;
     }
-
-    const { status, cargo } = snap.data();
-    console.log('6 - Status:', status, '| Cargo:', cargo);
-
-    if (status === 'banido') {
-      console.log('7 - Banido');
-      Alert.alert('Acesso Bloqueado', 'Sua conta foi banida.');
-      await auth.signOut();
-      setCarregando(false);
-      return;
-    }
-
-    if (status === 'analise') {
-      console.log('8 - Em análise');
-      Alert.alert('Em Análise', 'Cadastro ainda em análise.');
-      await auth.signOut();
-      setCarregando(false);
-      return;
-    }
-
-    console.log('9 - Login OK, aguardando AuthContext redirecionar...');
-    setPassword('');
-
-  } catch (erro) {
-    console.log('ERRO:', erro.code, erro.message);
-    Alert.alert('Erro ao entrar', traduzirErroAuth(erro.code));
-  } finally {
-    setCarregando(false);
   }
-}
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -198,6 +186,13 @@ export default function Login() {
             />
             <Text style={styles.senhaLabel}>Senha</Text>
             <SecurityInput value={password} onChangeText={setPassword} placeholder="" />
+            <TouchableOpacity
+              style={styles.esqueciBtn}
+              onPress={() => navigation.navigate('EsqueciSenha')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.esqueciTexto}>Esqueceu sua senha?</Text>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -297,4 +292,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   botaoCadastroTexto: { fontSize: 15, fontWeight: '600', color: C.textoMedio },
+  esqueciBtn:  { alignSelf: 'flex-end', marginTop: -16, marginBottom: 8 },
+  esqueciTexto:{ fontSize: 12, color: C.verde, fontWeight: '600' },
 });
