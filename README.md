@@ -4,15 +4,14 @@ Aplicativo Android para organizar o transporte universitário: os estudantes se 
 
 > Esta é a **versão app** do Unibus, feita em React Native com Firebase. O projeto depois ganhou uma **versão web** em PHP/MySQL, hospedada em servidor próprio, para atender também quem usa iPhone e incluir relatórios em PDF e cobrança de viagens pagas.
 
-<!-- TODO: adicionar prints (Login, Viagens, Lista de presença, Usuários, Mapa) -->
-<!--
-<p align="center">
-  <img src="docs/login.png" width="180">
-  <img src="docs/viagens.png" width="180">
-  <img src="docs/presenca.png" width="180">
-  <img src="docs/usuarios.png" width="180">
-</p>
--->
+<table>
+  <tr>
+    <td align="center"><img src="docs/login.png" width="180"><br><sub>Login</sub></td>
+    <td align="center"><img src="docs/cadastro.png" width="180"><br><sub>Cadastro</sub></td>
+    <td align="center"><img src="docs/senha.png" width="180"><br><sub>Recuperação de senha</sub></td>
+    <td align="center"><img src="docs/usuarios.png" width="180"><br><sub>Gerenciamento de usuários</sub></td>
+  </tr>
+</table>
 
 ## Funcionalidades
 
